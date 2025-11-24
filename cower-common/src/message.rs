@@ -1,26 +1,111 @@
 //! Code related to messages that clients and servers can pass to one another.
 
-/// The length of the `opcode` field in serialized messages
-pub const OPCODE_LENGTH: usize = size_of::<u8>();
-/// The length of the `length` field in serialized messages
-pub const LENGTH_FIELD_LENGTH: usize = size_of::<u8>();
-/// The total message length
-pub const MESSAGE_LENGTH: usize = u8::MAX as usize;
+/// Maximum length of a message. Functions may return errors on receiving and panic on sending if
+/// the message length exceeds this value
+pub const MAX_MESSAGE_LENGTH: usize = u16::MAX as usize;
+
+/// Maximum length of the message payload.
+pub const MAX_MESSAGE_PAYLOAD_LENGTH: usize = MAX_MESSAGE_LENGTH - size_of::<MessageHeader>();
+
+/// Size of the message header in bytes
+pub const HEADER_SIZE: usize = size_of::<OpCode>() + size_of::<u16>();
+
+/// The header of the message containing control fields.
+///
+/// # Serialization
+///
+/// If you are implementing the serialization mechanism for the header somewhere, **DON'T USE THE
+/// SIZE OF THE STRUCT PROVIDED BY** [`std::mem::size_of<MessageHeader>()`]**!** The struct is
+/// aligned, which means that the serialized bytes will be of a different length.
+#[allow(missing_docs)] // the fields are painfully obvious
+pub struct MessageHeader {
+    pub opcode: OpCode,
+    pub length: u16,
+}
+
+impl MessageHeader {
+    /// Serialize the message header into bytes.
+    pub const fn serialize(&self) -> [u8; HEADER_SIZE] {
+        let mut buf = [0; HEADER_SIZE];
+
+        let (opcode, length) = buf.split_at_mut(size_of::<OpCode>());
+        // yes, conversion to big endian is useless here, but if the opcode type changes sometime
+        // later this will be needed
+        opcode[0] = (self.opcode as u8).to_be();
+        let length_bytes = self.length.to_be_bytes();
+        length.copy_from_slice(&length_bytes);
+
+        buf
+    }
+}
+
+#[cfg(test)]
+mod header_tests {
+    use crate::message::{MessageHeader, OpCode};
+
+    #[test]
+    fn serialize_header() {
+        let header = MessageHeader {
+            opcode: OpCode::StartMessage,
+            length: 69,
+        };
+
+        let serialized = header.serialize();
+
+        assert_eq!(serialized[0], (OpCode::StartMessage as u8).to_be());
+        let length_offset: usize = 1;
+        assert_eq!(
+            &serialized[length_offset..(size_of::<u16>() + length_offset)],
+            69_u16.to_be_bytes()
+        );
+    }
+}
+
+/// The different message opcode constants
+///
+/// # Stability
+///
+/// Don't rely on this being stable; this might dissappear at any time and I am actively looking
+/// for options on how to move this closer to its usage.
+#[allow(missing_docs)]
+#[derive(strum::FromRepr, Clone, Copy)]
+#[repr(u8)]
+pub enum OpCode {
+    StartMessage = 0,
+}
 
 /// A message that can serialize itself into a byte buffer as well as deserialize itself from one
 pub trait Message {
-    /// Serialize into bytes ready to be send over the network
-    fn serialize(&self) -> crate::Result<[u8; MESSAGE_LENGTH]>;
-    /// Deserialize from a byte buffer
-    fn deserialize(data: &[u8; MESSAGE_LENGTH]) -> crate::Result<Box<Self>>
-    where
-        Self: Sized;
-}
+    /// This needs to take in `&self` in order to be dyn compatible.
+    fn opcode(&self) -> OpCode;
+    /// Serialize message data into bytes
+    fn serialize_data(&self) -> crate::Result<Box<[u8]>>;
 
-#[derive(strum::FromRepr)]
-#[repr(u8)]
-enum OpCode {
-    StartMessage = 0,
+    /// Serialize the message into bytes ready to be sent over the network. In contrast to
+    /// [`Message::serialize_data`], this function is provided for messages by default and should
+    /// almost never be overridden. If you need to override this function, you are either very
+    /// cool and we should be friends, or you're doing something very, very wrong. Or both.
+    fn serialize(&self) -> crate::Result<Box<[u8]>> {
+        let data = self.serialize_data()?;
+        if data.len() > MAX_MESSAGE_PAYLOAD_LENGTH {
+            return Err(crate::Error::MesssageTooBig);
+        }
+
+        let header = MessageHeader {
+            opcode: self.opcode(),
+            // we should be fine here since we checked if data length is within the u16 range above
+            length: data
+                .len()
+                .try_into()
+                .expect("data length is outside of u16 range"),
+        };
+        let header_bytes = header.serialize();
+
+        let mut buf = vec![];
+        buf.reserve(header_bytes.len() + data.len());
+
+        Ok(Box::from(buf.as_slice()))
+    }
 }
 
 /// A message that tells the receiver that it should start a container
@@ -31,70 +116,22 @@ pub struct StartMessage {
 }
 
 impl Message for StartMessage {
-    fn serialize(&self) -> crate::Result<[u8; MESSAGE_LENGTH]> {
-        if self.resource_name.len() > MESSAGE_LENGTH - OPCODE_LENGTH - LENGTH_FIELD_LENGTH {
+    fn opcode(&self) -> OpCode {
+        OpCode::StartMessage
+    }
+
+    fn serialize_data(&self) -> crate::Result<Box<[u8]>> {
+        let mut vec = vec![];
+
+        let bytes = self.resource_name.as_bytes();
+        vec.reserve(bytes.len());
+        vec[0..bytes.len() as usize].copy_from_slice(bytes);
+
+        // TODO: this checks the length only after serializing the data. make the check happen
+        // before
+        if vec.len() > MAX_MESSAGE_PAYLOAD_LENGTH {
             return Err(crate::Error::MesssageTooBig);
         }
-
-        let mut buf = [0; MESSAGE_LENGTH as usize];
-        let (opcode_field, data_section) = buf.split_at_mut(OPCODE_LENGTH);
-        assert!(opcode_field.len() == OPCODE_LENGTH);
-
-        let (length_field, data_field) = data_section.split_at_mut(LENGTH_FIELD_LENGTH);
-        assert!(length_field.len() == LENGTH_FIELD_LENGTH);
-
-        opcode_field[0] = OpCode::StartMessage as u8;
-        let name = self.resource_name.as_bytes();
-        length_field[0] = self
-            .resource_name
-            .len()
-            .try_into()
-            .expect("Resource name length is too long");
-        data_field[0..self.resource_name.len()].copy_from_slice(name);
-
-        return Ok(buf);
-    }
-
-    fn deserialize(data: &[u8; MESSAGE_LENGTH]) -> crate::Result<Box<Self>>
-    where
-        Self: Sized,
-    {
-        let (opcode, data_section) = data.split_at(OPCODE_LENGTH);
-        assert!(opcode.len() == OPCODE_LENGTH);
-
-        if opcode[0] != OpCode::StartMessage as u8 {
-            return Err(crate::Error::UnknownMessage);
-        }
-
-        let (length_field, data_field) = data_section.split_at(1);
-        assert!(length_field.len() == LENGTH_FIELD_LENGTH);
-        let length = length_field[0];
-
-        let resource_name_section = &data_field[0..(length as usize)];
-        let resource_name = str::from_utf8(resource_name_section)?.to_owned();
-
-        Ok(Self {
-            resource_name: resource_name,
-        }
-        .into())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn serde_start_message() {
-        let name = "my_resource";
-        let msg = StartMessage {
-            resource_name: name.to_owned(),
-        };
-
-        let ser = msg.serialize().expect("Failed to serialize message");
-
-        let de = StartMessage::deserialize(ser.as_ref().try_into().unwrap()).unwrap();
-
-        assert_eq!(msg, *de);
+        return Ok(Box::from(vec.as_slice()));
     }
 }

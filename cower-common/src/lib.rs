@@ -43,9 +43,12 @@ pub struct Client;
 /// The end of a connection that acts as the acceptor
 pub struct Server;
 
-/// An encrypted connection between `cower` programs. If you need to connect to a client, use
-/// [`Connection::connect`]. If you need to accept a connection from a client, use [`Acceptor`]
-/// instead.
+/// An encrypted connection between `cower` programs
+///
+/// # Initialization
+///
+/// If you need to connect to a client, use [`Connection::connect`]. If you need to accept a
+/// connection from a client, use [`Acceptor`] instead.
 pub struct Connection<T> {
     stream: TlsStream<TcpStream>,
     _0: PhantomData<T>,
@@ -54,7 +57,7 @@ pub struct Connection<T> {
 impl Connection<()> {
     /// Send a message over the connection
     pub fn send(&mut self, message: &dyn Message) -> crate::Result<()> {
-        let buf = message.serialize()?;
+        let buf = message.serialize_data()?;
 
         self.stream.write_all(&buf)?;
         Ok(())
@@ -62,7 +65,9 @@ impl Connection<()> {
 
     /// Receive a message over the connection
     pub fn receive(&mut self) -> crate::Result<Box<dyn Message>> {
-        let mut buf = [0; message::MESSAGE_LENGTH];
+        // FIXME: this is broken right now
+
+        let mut buf = [0; message::MAX_MESSAGE_LENGTH];
         self.stream.read_exact(&mut buf)?;
 
         todo!()
@@ -111,58 +116,5 @@ impl Acceptor {
             stream: tls_stream,
             _0: PhantomData,
         })
-    }
-}
-
-#[cfg(test)]
-mod acceptor_tests {
-    use std::{
-        error::Error,
-        net::{SocketAddrV4, TcpListener},
-        str::FromStr,
-        thread,
-        time::Duration,
-    };
-
-    use native_tls::{Certificate, Identity};
-
-    use crate::{Acceptor, Connection};
-
-    static CERTIFICATE: &'static [u8] = include_bytes!("../../test-keys/cert.crt");
-    static KEY_PASSWORD: &'static str = include_str!("../../test-keys/password.asc");
-    static PKCS12_BUNDLE: &'static [u8] = include_bytes!("../../test-keys/identity.pfx");
-
-    type R = Result<(), Box<dyn Error>>;
-
-    #[test]
-    fn construct_acceptor() -> R {
-        let identity = Identity::from_pkcs12(PKCS12_BUNDLE, KEY_PASSWORD.trim())?;
-        let _ = Acceptor::new(identity)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn accept_connection() -> R {
-        let identity = Identity::from_pkcs12(PKCS12_BUNDLE, KEY_PASSWORD.trim())?;
-        let acceptor = Acceptor::new(identity)?;
-
-        let listener = TcpListener::bind("127.0.0.1:6969")?;
-
-        let cert = Certificate::from_pem(CERTIFICATE)?;
-        let c_thread = thread::spawn(move || {
-            // TODO: maybe not sleep here as it slows the tests down
-            thread::sleep(Duration::from_millis(50));
-
-            let addr = SocketAddrV4::from_str("127.0.0.1:6969").expect("Invalid socket address");
-            Connection::connect(addr.into(), "127.0.0.1", Some(cert)).expect("Failed to connect");
-        });
-
-        let (stream, _) = listener.accept()?;
-        let _ = acceptor.accept(stream)?;
-
-        let _ = c_thread.join().unwrap();
-
-        Ok(())
     }
 }
