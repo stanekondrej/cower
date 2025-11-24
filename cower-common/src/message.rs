@@ -138,7 +138,7 @@ pub trait Message {
         };
         let header_bytes = header.serialize();
 
-        let mut buf = Vec::with_capacity(header_bytes.len() + data.len());
+        let mut buf = vec![0; header_bytes.len() + data.len()];
         buf.reserve(header_bytes.len() + data.len());
 
         let (header_buf, data_buf) = buf.split_at_mut(HEADER_SIZE);
@@ -146,6 +146,22 @@ pub trait Message {
         data_buf.copy_from_slice(&data);
 
         Ok(Box::from(buf.as_slice()))
+    }
+}
+
+#[cfg(test)]
+mod message_trait_tests {
+    use crate::message::{Message, StartMessage};
+
+    #[test]
+    fn serialize_message() -> crate::Result<()> {
+        let my_message: &dyn Message = &StartMessage {
+            resource_name: "my_resource".to_owned(),
+        };
+
+        let _ = my_message.serialize()?;
+
+        Ok(())
     }
 }
 
@@ -162,10 +178,9 @@ impl Message for StartMessage {
     }
 
     fn serialize_data(&self) -> crate::Result<Box<[u8]>> {
-        let mut vec = vec![];
-
         let bytes = self.resource_name.as_bytes();
-        vec.reserve(bytes.len());
+
+        let mut vec = vec![0; bytes.len()];
         vec[0..bytes.len()].copy_from_slice(bytes);
 
         // TODO: this checks the length only after serializing the data. make the check happen
