@@ -24,7 +24,7 @@ pub struct MessageHeader {
 }
 
 impl MessageHeader {
-    /// Serialize the message header into bytes.
+    /// Serialize the message header into bytes
     pub const fn serialize(&self) -> [u8; HEADER_SIZE] {
         let mut buf = [0; HEADER_SIZE];
 
@@ -37,11 +37,32 @@ impl MessageHeader {
 
         buf
     }
+
+    /// Parse the header from a provided buffer
+    pub fn deserialize(buf: &[u8; HEADER_SIZE]) -> crate::Result<Self> {
+        let (opcode_buf, length_buf) = buf.split_at(size_of::<OpCode>());
+        // TODO: check if this behaves right on little endian
+        let opcode = if cfg!(target_endian = "big") {
+            opcode_buf[0]
+        } else {
+            opcode_buf[0].to_le()
+        };
+        let opcode = OpCode::from_repr(opcode).ok_or(crate::Error::UnknownMessage)?;
+
+        // TODO: also check if this behaves right
+        let mut length: u16 = 0;
+        length += <u8 as std::convert::Into<u16>>::into(length_buf[0] << 1);
+        length += <u8 as std::convert::Into<u16>>::into(length_buf[1]);
+
+        Ok(Self { opcode, length })
+    }
 }
 
 #[cfg(test)]
 mod header_tests {
-    use crate::message::{MessageHeader, OpCode};
+    use std::io::Read;
+
+    use crate::message::{HEADER_SIZE, MessageHeader, OpCode};
 
     #[test]
     fn serialize_header() {
@@ -59,6 +80,24 @@ mod header_tests {
             69_u16.to_be_bytes()
         );
     }
+
+    #[test]
+    fn deserialize_header() -> crate::Result<()> {
+        const OPCODE: OpCode = OpCode::StartMessage;
+        const LENGTH: u16 = 50;
+
+        let mut header_buf = [0; HEADER_SIZE];
+
+        let (opcode_field, length_field) = header_buf.split_at_mut(size_of::<OpCode>());
+        opcode_field[0] = OPCODE as u8;
+        length_field.copy_from_slice(&LENGTH.to_be_bytes());
+
+        let header = MessageHeader::deserialize(&header_buf)?;
+        assert_eq!(header.opcode, OPCODE);
+        assert_eq!(header.length, LENGTH);
+
+        Ok(())
+    }
 }
 
 /// The different message opcode constants
@@ -68,7 +107,7 @@ mod header_tests {
 /// Don't rely on this being stable; this might dissappear at any time and I am actively looking
 /// for options on how to move this closer to its usage.
 #[allow(missing_docs)]
-#[derive(strum::FromRepr, Clone, Copy)]
+#[derive(strum::FromRepr, Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum OpCode {
     StartMessage = 0,
