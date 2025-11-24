@@ -140,8 +140,12 @@ pub trait Message {
         };
         let header_bytes = header.serialize();
 
-        let mut buf = vec![];
+        let mut buf = Vec::with_capacity(header_bytes.len() + data.len());
         buf.reserve(header_bytes.len() + data.len());
+
+        let (header_buf, data_buf) = buf.split_at_mut(HEADER_SIZE);
+        header_buf.copy_from_slice(&header_bytes);
+        data_buf.copy_from_slice(&data);
 
         Ok(Box::from(buf.as_slice()))
     }
