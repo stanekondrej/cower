@@ -1,8 +1,15 @@
 # cower - **CO**ntainer **W**ak**er**
 
 I have no idea how one would even set
-[Wake-on-LAN](https://en.wikipedia.org/wiki/Wake-on-LAN) up. So, this is what
-created.
+[Wake-on-LAN](https://en.wikipedia.org/wiki/Wake-on-LAN) for containers up. So,
+this is what I created specifically for this purpose - waking containers up
+remotely.
+
+One might (quite reasonably) object that there are things like Red Hat's
+[Cockpit](https://cockpit-project.org/), or that the same thing can be achieved
+using just SSH.
+
+One would be correct.
 
 ## My use case
 
