@@ -60,8 +60,6 @@ impl MessageHeader {
 
 #[cfg(test)]
 mod header_tests {
-    use std::io::Read;
-
     use crate::message::{HEADER_SIZE, MessageHeader, OpCode};
 
     #[test]
@@ -168,13 +166,14 @@ impl Message for StartMessage {
 
         let bytes = self.resource_name.as_bytes();
         vec.reserve(bytes.len());
-        vec[0..bytes.len() as usize].copy_from_slice(bytes);
+        vec[0..bytes.len()].copy_from_slice(bytes);
 
         // TODO: this checks the length only after serializing the data. make the check happen
         // before
         if vec.len() > MAX_MESSAGE_PAYLOAD_LENGTH {
             return Err(crate::Error::MesssageTooBig);
         }
-        return Ok(Box::from(vec.as_slice()));
+
+        Ok(Box::from(vec.as_slice()))
     }
 }
