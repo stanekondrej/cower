@@ -54,17 +54,17 @@ pub struct Connection<T> {
     _0: PhantomData<T>,
 }
 
-impl Connection<()> {
+impl<T> Connection<T> {
     /// Send a message over the connection
-    pub fn send(&mut self, message: &dyn Message) -> crate::Result<()> {
-        let buf = message.serialize_data()?;
+    pub fn send(&mut self, message: &Message) -> crate::Result<()> {
+        let buf = message.serialize()?;
 
         self.stream.write_all(&buf)?;
         Ok(())
     }
 
     /// Receive a message over the connection
-    pub fn receive(&mut self) -> crate::Result<Box<dyn Message>> {
+    pub fn receive(&mut self) -> crate::Result<Message> {
         // FIXME: this is broken right now
 
         let mut buf = [0; message::MAX_MESSAGE_LENGTH];
@@ -72,7 +72,9 @@ impl Connection<()> {
 
         todo!()
     }
+}
 
+impl Connection<()> {
     /// Connects to the given server
     pub fn connect(
         addr: net::SocketAddr,
@@ -96,6 +98,7 @@ impl Connection<()> {
 }
 
 /// Accepts and initiates connections, verifies the identity of clients
+#[derive(Clone)]
 pub struct Acceptor(TlsAcceptor);
 
 impl Acceptor {
