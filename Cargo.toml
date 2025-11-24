@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["cower-client", "cower-common", "cower-server", "cower-target"]
