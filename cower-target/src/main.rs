@@ -1,49 +1,74 @@
+use anyhow::anyhow;
+use native_tls::Identity;
 use std::{
     env, fs,
     io::Read,
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
+    path::PathBuf,
     thread::{self, JoinHandle},
 };
 
-use cower_common::prelude::*;
-use native_tls::Identity;
+use clap::Parser;
+
+use cower_common::Acceptor;
+
+const DEFAULT_BIND_ADDR: &str = "0.0.0.0:9989";
+
+#[derive(Parser)]
+#[command(about, long_about)]
+struct Args {
+    /// Socket address to bind to
+    #[arg(short, long, default_value_t = String::from(DEFAULT_BIND_ADDR))]
+    addr: String,
+
+    /// Path to identity file
+    #[arg(long)]
+    ident_path: Option<PathBuf>,
+
+    /// Password to identity file
+    #[arg(long)]
+    ident_pass: Option<String>,
+}
+
+fn spawn_handler_thread(acceptor: Acceptor, stream: TcpStream) -> JoinHandle<anyhow::Result<()>> {
+    thread::spawn(move || {
+        let mut stream = acceptor.accept(stream)?;
+        let msg = stream.receive()?;
+
+        dbg!(msg);
+        todo!("Implement message handling functionality");
+    })
+}
 
 fn main() -> anyhow::Result<()> {
-    let identity_pass = env::var("COWER_IDENT_PASS")?;
-    let mut buf: Vec<u8> = vec![];
-    {
-        let identity_env = env::var("COWER_IDENT")?;
-        let mut identity_file = fs::File::open(identity_env)?;
+    let args = Args::parse();
+    _ = args;
 
-        identity_file.read_to_end(&mut buf)?;
-    }
+    let ident_path = args
+        .ident_path
+        .or_else(|| env::var("COWER_IDENT_PATH").ok().map(PathBuf::from))
+        .ok_or(anyhow!("Missing path to identity file"))?;
 
-    let identity = Identity::from_pkcs12(&buf, &identity_pass)?;
-    let acceptor = cower_common::Acceptor::new(identity)?;
+    let ident_pass = args
+        .ident_pass
+        .or_else(|| env::var("COWER_IDENT_PASS").ok())
+        .ok_or(anyhow!("Missing password to identity file"))?;
 
-    let listener = TcpListener::bind("0.0.0.0:9989")?;
-    eprintln!("Bound to port 9989");
+    let mut ident_buf = vec![];
+    let mut identity = fs::File::open(ident_path)?;
+    identity.read_to_end(&mut ident_buf)?;
+
+    let identity = Identity::from_pkcs12(&ident_buf, &ident_pass)?;
+
+    let acceptor = Acceptor::new(identity)?;
+    let listener = TcpListener::bind(args.addr)?;
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let acceptor = acceptor.clone();
-                let _: JoinHandle<anyhow::Result<()>> = thread::spawn(move || {
-                    let mut stream = acceptor.accept(stream)?;
-                    let message = stream.receive()?;
-
-                    match message {
-                        Message::StartMessage { resource_name } => {
-                            println!("Received start message");
-                            dbg!(&resource_name);
-                        }
-                    }
-
-                    Ok(())
-                });
+                _ = spawn_handler_thread(acceptor, stream);
             }
-            Err(why) => {
-                eprintln!("Failed to accept stream: {why}")
-            }
+            Err(why) => println!("Failed to accept connection: {why}"),
         }
     }
 
