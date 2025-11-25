@@ -36,6 +36,10 @@ does!
 Servers aren't strictly necessary. If you aren't behind a NAT, you should be
 just fine routing `cower` commands straight from `Client`s to `Server`s.
 
+## Protocol
+
+Cower uses its custom protocol. See [PROTOCOL.md](PROTOCOL.md) for more information.
+
 ## The `test-keys` directory
 
 **The `test-keys/` directory contains keys used for testing, as the name
