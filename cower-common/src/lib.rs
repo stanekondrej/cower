@@ -13,7 +13,7 @@ use native_tls::{Certificate, Identity, TlsAcceptor, TlsStream};
 use std::{
     io::{self, Read, Write},
     marker::PhantomData,
-    net::{self, TcpStream},
+    net::{TcpStream, ToSocketAddrs},
     result,
 };
 
@@ -76,8 +76,8 @@ impl<T> Connection<T> {
 
 impl Connection<()> {
     /// Connects to the given server
-    pub fn connect(
-        addr: net::SocketAddr,
+    pub fn connect<A: ToSocketAddrs>(
+        addr: A,
         domain: &str,
         custom_cert: Option<Certificate>,
     ) -> Result<Connection<Client>> {
@@ -119,5 +119,53 @@ impl Acceptor {
             stream: tls_stream,
             _0: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod acceptor_tests {
+    use std::{
+        net::TcpListener,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        thread,
+    };
+
+    use native_tls::{Certificate, Identity};
+
+    use super::{Acceptor, Connection};
+
+    const IDENT_FILE: &[u8] = include_bytes!("../../test-keys/identity.p12");
+    const IDENT_PASS: &str = include_str!("../../test-keys/creds.asc");
+    const CUSTOM_CERT: &[u8] = include_bytes!("../../test-keys/cert.crt");
+
+    #[test]
+    fn accept_connection() -> crate::Result<()> {
+        let identity = Identity::from_pkcs12(IDENT_FILE, IDENT_PASS.trim())?;
+        let acceptor = Acceptor::new(identity)?;
+
+        let cert = Certificate::from_pem(CUSTOM_CERT)?;
+
+        let ready: Arc<AtomicBool> = Arc::new(false.into());
+        let r = ready.clone();
+        let handle = thread::spawn(move || {
+            while !r.load(std::sync::atomic::Ordering::Relaxed) {
+                std::hint::spin_loop();
+            }
+
+            _ = Connection::connect("127.0.0.1:9989", "localhost", Some(cert));
+        });
+
+        let listener = TcpListener::bind("127.0.0.1:9989")?;
+        ready.store(true, Ordering::Relaxed);
+
+        let stream = listener.incoming().next().unwrap().unwrap();
+        _ = acceptor.accept(stream)?;
+
+        handle.join().unwrap();
+
+        Ok(())
     }
 }
