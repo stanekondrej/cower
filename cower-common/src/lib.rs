@@ -116,6 +116,7 @@ impl Acceptor {
     /// Constructs a new acceptor with sane TLS configuration.
     pub fn new(identity: Identity) -> crate::Result<Acceptor> {
         let acceptor = TlsAcceptor::builder(identity)
+            // remove this if this causes problems for older platforms
             .min_protocol_version(Some(native_tls::Protocol::Tlsv12))
             .build()?;
 
