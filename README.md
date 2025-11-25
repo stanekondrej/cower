@@ -1,4 +1,4 @@
-# cower - **CO**ntainer **W**ak**er**
+# cower - **CO**ntainer **W**ak**ER**
 
 I have no idea how one would even set
 [Wake-on-LAN](https://en.wikipedia.org/wiki/Wake-on-LAN) for containers up. So,
@@ -9,7 +9,10 @@ One might (quite reasonably) object that there are things like Red Hat's
 [Cockpit](https://cockpit-project.org/), or that the same thing can be achieved
 using just SSH.
 
-One would be correct.
+One would be correct. However, setting up some complicated permissions system or
+giving your colleagues (or friends, whoever) full SSH/Cockpit access to your
+(company's) server is bad practice. I for one wouldn't trust my friends with
+that kind of power.
 
 ## My use case
 
@@ -22,6 +25,8 @@ friends start the container if I stop it or if it crashes. This is what `cower`
 does!
 
 ## Architecture
+
+<!-- TODO add graph to visualize communication between components -->
 
 - Client - someone who wants to remotely wake containers
 - Server - something that forwards commands to targets, although not always
