@@ -4,11 +4,13 @@
 /// the message length exceeds this value
 pub const MAX_MESSAGE_LENGTH: usize = u16::MAX as usize;
 
-/// Maximum length of the message payload.
-pub const MAX_MESSAGE_PAYLOAD_LENGTH: usize = MAX_MESSAGE_LENGTH - size_of::<MessageHeader>();
-
 /// Size of the message header in bytes
+// this doesn't take the size directly from `size_of::<MessageHeader>()` because alignment is
+// something that (fortunately) doesn't apply to bytes sent over the network.
 pub const HEADER_SIZE: usize = size_of::<OpCode>() + size_of::<u16>();
+
+/// Maximum length of the message payload.
+pub const MAX_MESSAGE_PAYLOAD_LENGTH: usize = MAX_MESSAGE_LENGTH - HEADER_SIZE;
 
 /// The different message opcode constants
 ///
@@ -153,10 +155,7 @@ impl Message {
                     return Err(crate::Error::MesssageTooBig);
                 }
 
-                let mut buf = vec![0; resource_name.len()];
-                buf.copy_from_slice(resource_name.as_bytes());
-
-                Ok(buf.into_boxed_slice())
+                Ok(resource_name.as_bytes().to_vec().into_boxed_slice())
             }
         }
     }
