@@ -34,6 +34,7 @@ pub enum OpCode {
 /// SIZE OF THE STRUCT PROVIDED BY** [`std::mem::size_of<MessageHeader>()`]**!** The struct is
 /// aligned, which means that the serialized bytes will be of a different length.
 #[allow(missing_docs)] // the fields are painfully obvious
+#[derive(Debug)]
 pub struct MessageHeader {
     pub opcode: OpCode,
     pub length: u16,
@@ -71,8 +72,8 @@ impl MessageHeader {
 
         // TODO: also check if this behaves right on little endian
         let mut length: u16 = 0;
-        length += <u8 as std::convert::Into<u16>>::into(length_buf[0] << 1);
-        length += <u8 as std::convert::Into<u16>>::into(length_buf[1]);
+        length += u16::from(length_buf[0] << 1);
+        length += u16::from(length_buf[1]);
 
         Ok(Self { opcode, length })
     }
@@ -119,6 +120,7 @@ mod header_tests {
 }
 
 /// A message to be sent or received over the network using [`crate::Connection`]
+#[derive(Debug)]
 pub enum Message {
     /// A message indicating a container should be started
     StartMessage {
@@ -128,27 +130,31 @@ pub enum Message {
 }
 
 impl Message {
-    /// Serialize a message into bytes ready to be sent over the network
-    pub fn serialize(&self) -> crate::Result<Box<[u8]>> {
+    /// Create a header from the current message
+    pub fn create_header(&self) -> crate::Result<MessageHeader> {
+        Ok(match self {
+            Self::StartMessage { resource_name } => MessageHeader {
+                opcode: OpCode::StartMessage,
+                length: resource_name
+                    .len()
+                    .try_into()
+                    .ok()
+                    .ok_or(crate::Error::MesssageTooBig)?,
+            },
+        })
+    }
+
+    /// Serialize the payload data into bytes. This doesn't include the header; you have to
+    /// construct the header separately
+    pub fn serialize_payload(&self) -> crate::Result<Box<[u8]>> {
         match self {
             Self::StartMessage { resource_name } => {
                 if resource_name.len() > MAX_MESSAGE_PAYLOAD_LENGTH {
                     return Err(crate::Error::MesssageTooBig);
                 }
 
-                let message_header = MessageHeader {
-                    opcode: OpCode::StartMessage,
-                    length: resource_name
-                        .len()
-                        .try_into()
-                        .expect("Unable to fit resource name length into u16"),
-                };
-                let message_header = message_header.serialize();
-
-                let mut buf = vec![0; message_header.len() + resource_name.len()];
-                let (header_buf, payload_buf) = buf.split_at_mut(message_header.len());
-                header_buf.copy_from_slice(&message_header);
-                payload_buf.copy_from_slice(resource_name.as_bytes());
+                let mut buf = vec![0; resource_name.len()];
+                buf.copy_from_slice(resource_name.as_bytes());
 
                 Ok(buf.into_boxed_slice())
             }
@@ -156,18 +162,12 @@ impl Message {
     }
 
     /// Deserialize a message from a buffer. `buf.len()` is assumed to be `<= MAX_MESSAGE_LENGTH`
-    pub fn deserialize(buf: &[u8]) -> crate::Result<Self> {
-        assert!(buf.len() <= MAX_MESSAGE_LENGTH);
+    pub fn deserialize(header: &MessageHeader, payload_buf: &[u8]) -> crate::Result<Self> {
+        assert!(payload_buf.len() <= MAX_MESSAGE_LENGTH);
 
-        if buf.len() < HEADER_SIZE {
-            return Err(crate::Error::UnknownMessage);
-        }
-
-        let header = MessageHeader::deserialize(buf)?;
         match header.opcode {
             OpCode::StartMessage => {
-                let resource_name = &buf[HEADER_SIZE
-                    ..(HEADER_SIZE + <u16 as std::convert::Into<usize>>::into(header.length))];
+                let resource_name = &payload_buf[0..usize::from(header.length)];
                 let resource_name = str::from_utf8(resource_name)?.to_owned();
 
                 Ok(Self::StartMessage { resource_name })
@@ -187,9 +187,10 @@ mod tests {
         let message = Message::StartMessage {
             resource_name: resource_name.to_owned(),
         };
+        let header = message.create_header()?;
+        let message = message.serialize_payload()?;
 
-        let buf = message.serialize()?;
-        let message = Message::deserialize(&buf)?;
+        let message = Message::deserialize(&header, &message)?;
 
         #[allow(irrefutable_let_patterns)] // TODO: remove this when more message types are added
         if let Message::StartMessage {

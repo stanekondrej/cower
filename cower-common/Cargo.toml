@@ -7,3 +7,6 @@ edition = "2024"
 native-tls = "0.2.14"
 strum = { version = "0.27.2", features = ["derive"] }
 thiserror = "2.0.17"
+
+[dev-dependencies]
+port_check = "0.3.0"

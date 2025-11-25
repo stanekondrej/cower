@@ -17,6 +17,8 @@ use std::{
     result,
 };
 
+use crate::message::{HEADER_SIZE, MAX_MESSAGE_PAYLOAD_LENGTH, MessageHeader};
+
 /// Error type returned by all the different functions this library provides
 #[allow(missing_docs)]
 #[derive(thiserror::Error, Debug)]
@@ -57,7 +59,10 @@ pub struct Connection<T> {
 impl<T> Connection<T> {
     /// Send a message over the connection
     pub fn send(&mut self, message: &Message) -> crate::Result<()> {
-        let buf = message.serialize()?;
+        let header_buf = message.create_header()?.serialize();
+        let message_buf = message.serialize_payload()?;
+
+        let buf = [&header_buf, message_buf.iter().as_slice()].concat();
 
         self.stream.write_all(&buf)?;
         Ok(())
@@ -65,12 +70,18 @@ impl<T> Connection<T> {
 
     /// Receive a message over the connection
     pub fn receive(&mut self) -> crate::Result<Message> {
-        // FIXME: this is broken right now
-
-        let mut buf = [0; message::MAX_MESSAGE_LENGTH];
+        let mut buf = [0; HEADER_SIZE];
         self.stream.read_exact(&mut buf)?;
 
-        todo!()
+        let header = MessageHeader::deserialize(&buf[0..HEADER_SIZE])?;
+        if usize::from(header.length) > MAX_MESSAGE_PAYLOAD_LENGTH {
+            return Err(crate::Error::MesssageTooBig);
+        }
+
+        let mut data_buf = vec![0; header.length.into()];
+        self.stream.read_exact(&mut data_buf)?;
+
+        Message::deserialize(&header, &data_buf)
     }
 }
 
@@ -125,15 +136,13 @@ impl Acceptor {
 #[cfg(test)]
 mod acceptor_tests {
     use std::{
-        net::TcpListener,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
-        thread,
+        net::{TcpListener, ToSocketAddrs},
+        thread::{self, JoinHandle},
     };
 
     use native_tls::{Certificate, Identity};
+
+    use crate::message::Message;
 
     use super::{Acceptor, Connection};
 
@@ -141,30 +150,67 @@ mod acceptor_tests {
     const IDENT_PASS: &str = include_str!("../../test-keys/creds.asc");
     const CUSTOM_CERT: &[u8] = include_bytes!("../../test-keys/cert.crt");
 
+    fn setup_test() -> crate::Result<(Acceptor, Certificate)> {
+        let cert = Certificate::from_pem(CUSTOM_CERT)?;
+        let identity = Identity::from_pkcs12(IDENT_FILE, IDENT_PASS.trim())?;
+        Ok((Acceptor::new(identity).unwrap(), cert))
+    }
+
+    fn get_local_addr() -> Option<impl ToSocketAddrs> {
+        let port = port_check::free_local_ipv4_port()?;
+
+        Some(("127.0.0.1", port))
+    }
+
     #[test]
     fn accept_connection() -> crate::Result<()> {
-        let identity = Identity::from_pkcs12(IDENT_FILE, IDENT_PASS.trim())?;
-        let acceptor = Acceptor::new(identity)?;
+        let (acceptor, cert) = setup_test()?;
 
-        let cert = Certificate::from_pem(CUSTOM_CERT)?;
-
-        let ready: Arc<AtomicBool> = Arc::new(false.into());
-        let r = ready.clone();
+        let addr = get_local_addr().expect("failed to get local address");
+        let listener = TcpListener::bind(&addr)?;
         let handle = thread::spawn(move || {
-            while !r.load(std::sync::atomic::Ordering::Relaxed) {
-                std::hint::spin_loop();
-            }
-
-            _ = Connection::connect("127.0.0.1:9989", "localhost", Some(cert));
+            _ = Connection::connect(&addr, "localhost", Some(cert));
         });
-
-        let listener = TcpListener::bind("127.0.0.1:9989")?;
-        ready.store(true, Ordering::Relaxed);
 
         let stream = listener.incoming().next().unwrap().unwrap();
         _ = acceptor.accept(stream)?;
 
         handle.join().unwrap();
+
+        Ok(())
+    }
+
+    #[test]
+    fn accept_message() -> crate::Result<()> {
+        let (acceptor, cert) = setup_test()?;
+
+        const RESOURCE_NAME: &str = "my_resource";
+
+        let addr = get_local_addr().expect("failed to get local address");
+        let listener = TcpListener::bind(&addr)?;
+        let handle: JoinHandle<crate::Result<()>> = thread::spawn(move || {
+            let mut conn = Connection::connect(&addr, "localhost", Some(cert))?;
+
+            let msg = Message::StartMessage {
+                resource_name: RESOURCE_NAME.to_owned(),
+            };
+            conn.send(&msg)?;
+
+            Ok(())
+        });
+
+        let stream = listener.incoming().next().unwrap().unwrap();
+        let mut conn = acceptor.accept(stream)?;
+        let msg = conn.receive()?;
+
+        #[allow(irrefutable_let_patterns)] // TODO: remove this when more message types are added
+        if let Message::StartMessage { resource_name } = msg {
+            assert_eq!(&resource_name, RESOURCE_NAME);
+        } else {
+            panic!("received different message type")
+        }
+
+        _ = handle.join().unwrap();
 
         Ok(())
     }
