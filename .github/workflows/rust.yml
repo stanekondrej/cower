@@ -18,9 +18,12 @@ jobs:
 
     - name: Add clippy
       run: rustup component add clippy
-
+      
+    - name: Install binstall
+      uses: cargo-bins/cargo-binstall@main
+    
     - name: Install cargo-audit
-      run: cargo install cargo-audit
+      run: cargo binstall cargo-audit
 
     - name: Build the project
       run: cargo build --verbose
