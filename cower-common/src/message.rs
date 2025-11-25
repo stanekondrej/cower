@@ -10,7 +10,23 @@ pub const MAX_MESSAGE_PAYLOAD_LENGTH: usize = MAX_MESSAGE_LENGTH - size_of::<Mes
 /// Size of the message header in bytes
 pub const HEADER_SIZE: usize = size_of::<OpCode>() + size_of::<u16>();
 
-/// The header of the message containing control fields.
+/// The different message opcode constants
+///
+/// # Stability
+///
+/// Don't rely on this specific enum being stable; this might dissappear at any time and I am
+/// actively looking for options on how to move this closer to its usage.
+///
+/// However, feel free to rely on the stability of the discriminants themselves. I'll try not to
+/// change them so that message passing ideally still works between minor version changes.
+#[allow(missing_docs)]
+#[derive(strum::FromRepr, Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
+pub enum OpCode {
+    StartMessage = 0,
+}
+
+/// The header of the message containing control fields
 ///
 /// # Serialization
 ///
@@ -102,19 +118,6 @@ mod header_tests {
     }
 }
 
-/// The different message opcode constants
-///
-/// # Stability
-///
-/// Don't rely on this being stable; this might dissappear at any time and I am actively looking
-/// for options on how to move this closer to its usage.
-#[allow(missing_docs)]
-#[derive(strum::FromRepr, Clone, Copy, Debug, PartialEq)]
-#[repr(u8)]
-pub enum OpCode {
-    StartMessage = 0,
-}
-
 /// A message to be sent or received over the network using [`crate::Connection`]
 pub enum Message {
     /// A message indicating a container should be started
@@ -125,12 +128,6 @@ pub enum Message {
 }
 
 impl Message {
-    fn opcode(&self) -> OpCode {
-        match self {
-            Message::StartMessage { .. } => OpCode::StartMessage,
-        }
-    }
-
     /// Serialize a message into bytes ready to be sent over the network
     pub fn serialize(&self) -> crate::Result<Box<[u8]>> {
         match self {
@@ -140,7 +137,7 @@ impl Message {
                 }
 
                 let message_header = MessageHeader {
-                    opcode: self.opcode(),
+                    opcode: OpCode::StartMessage,
                     length: resource_name
                         .len()
                         .try_into()
@@ -181,19 +178,28 @@ impl Message {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Message, message::OpCode};
+    use crate::Message;
 
     #[test]
-    fn serialize_message() -> crate::Result<()> {
+    fn serde_start_message() -> crate::Result<()> {
+        let resource_name = "my_resource";
+
         let message = Message::StartMessage {
-            resource_name: "my_resource".to_owned(),
+            resource_name: resource_name.to_owned(),
         };
 
         let buf = message.serialize()?;
+        let message = Message::deserialize(&buf)?;
 
-        assert_eq!(buf[0], OpCode::StartMessage as u8);
-
-        // FIXME: add the remaining things
+        #[allow(irrefutable_let_patterns)] // TODO: remove this when more message types are added
+        if let Message::StartMessage {
+            resource_name: parsed_res_name,
+        } = message
+        {
+            assert_eq!(resource_name, parsed_res_name.as_str());
+        } else {
+            panic!("Start message in buffer deserialized to a different type")
+        }
 
         Ok(())
     }
