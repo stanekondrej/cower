@@ -18,8 +18,13 @@ struct Args {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080);
-    let conn = Connection::connect(addr, "", None)?;
+    let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 9989);
+    let mut conn = Connection::connect(addr.into(), "", None)?;
+
+    let msg = Message::StartMessage {
+        resource_name: "my_resource".to_owned(),
+    };
+    conn.send(&msg)?;
 
     Ok(())
 }
