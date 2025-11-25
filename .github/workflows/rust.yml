@@ -1,0 +1,35 @@
+name: Rust CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Add clippy
+      run: rustup component add clippy
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+
+    - name: Build the project
+      run: cargo build --verbose
+
+    - name: Check warnings with Clippy
+      run: cargo clippy --all-targets -- -D warnings
+
+    - name: Run tests
+      run: cargo test --verbose
+
+    - name: Check for vulnerabilities
+      run: cargo audit

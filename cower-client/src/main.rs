@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    net::{Ipv4Addr, SocketAddrV4, TcpStream},
+    net::{Ipv4Addr, SocketAddrV4},
 };
 
 use clap::Parser;
@@ -16,8 +16,6 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse();
-
     let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 9989);
     let mut conn = Connection::connect(addr.into(), "", None)?;
 

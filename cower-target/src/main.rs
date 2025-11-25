@@ -5,7 +5,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use cower_common::message::Message;
+use cower_common::prelude::*;
 use native_tls::Identity;
 
 fn main() -> anyhow::Result<()> {
@@ -22,6 +22,7 @@ fn main() -> anyhow::Result<()> {
     let acceptor = cower_common::Acceptor::new(identity)?;
 
     let listener = TcpListener::bind("0.0.0.0:9989")?;
+    eprintln!("Bound to port 9989");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
