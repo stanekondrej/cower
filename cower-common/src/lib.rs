@@ -76,7 +76,7 @@ impl<T> Connection<T> {
 
         let header = MessageHeader::deserialize(&buf[0..HEADER_SIZE as usize])?;
 
-        let mut data_buf = vec![0; header.length.inner().into()];
+        let mut data_buf = vec![0; header.length.into()];
         self.stream.read_exact(&mut data_buf)?;
 
         Message::deserialize(&header, &data_buf)
