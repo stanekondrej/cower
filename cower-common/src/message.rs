@@ -108,7 +108,7 @@ mod header_tests {
 
     #[test]
     fn serialize_header() {
-        let length = PayloadLength::new(69).unwrap();
+        let length = PayloadLength::new(69).expect("length out of bounds");
 
         let header = MessageHeader {
             opcode: OpCode::StartMessage,
@@ -128,7 +128,7 @@ mod header_tests {
     #[test]
     fn deserialize_header() -> crate::Result<()> {
         const OPCODE: OpCode = OpCode::StartMessage;
-        let length = PayloadLength::new(50).unwrap();
+        let length = PayloadLength::new(50).expect("length out of bounds");
 
         let mut header_buf = [0; HEADER_SIZE as usize];
 
@@ -166,7 +166,7 @@ impl Message {
                         .try_into()
                         .expect("resource name too big"),
                 )
-                .unwrap(),
+                .ok_or(crate::Error::MesssageTooBig)?,
             },
         })
     }

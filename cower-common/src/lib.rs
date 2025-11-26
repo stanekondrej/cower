@@ -2,6 +2,7 @@
 //! and serde mechanisms.
 
 #![deny(missing_docs)]
+#![deny(clippy::unwrap_used)]
 
 pub mod message;
 pub mod prelude;
@@ -151,7 +152,8 @@ mod acceptor_tests {
     fn setup_test() -> crate::Result<(Acceptor, Certificate)> {
         let cert = Certificate::from_pem(CUSTOM_CERT)?;
         let identity = Identity::from_pkcs12(IDENT_FILE, IDENT_PASS.trim())?;
-        Ok((Acceptor::new(identity).unwrap(), cert))
+
+        Ok((Acceptor::new(identity)?, cert))
     }
 
     fn get_local_addr() -> Option<impl ToSocketAddrs> {
@@ -166,14 +168,20 @@ mod acceptor_tests {
 
         let addr = get_local_addr().expect("failed to get local address");
         let listener = TcpListener::bind(&addr)?;
-        let handle = thread::spawn(move || {
-            _ = Connection::connect(&addr, "localhost", Some(cert));
+        let handle: JoinHandle<crate::Result<()>> = thread::spawn(move || {
+            _ = Connection::connect(&addr, "localhost", Some(cert))?;
+
+            Ok(())
         });
 
-        let stream = listener.incoming().next().unwrap().unwrap();
+        let stream = listener
+            .incoming()
+            .next()
+            .expect("no next stream (this should never happen)")
+            .expect("failed to accept stream");
         _ = acceptor.accept(stream)?;
 
-        handle.join().unwrap();
+        _ = handle.join().expect("associated thread panicked");
 
         Ok(())
     }
@@ -197,7 +205,11 @@ mod acceptor_tests {
             Ok(())
         });
 
-        let stream = listener.incoming().next().unwrap().unwrap();
+        let stream = listener
+            .incoming()
+            .next()
+            .expect("no next stream (this should never be reached)")
+            .expect("failed to accept stream");
         let mut conn = acceptor.accept(stream)?;
         let msg = conn.receive()?;
 
@@ -208,7 +220,7 @@ mod acceptor_tests {
             panic!("received different message type")
         }
 
-        _ = handle.join().unwrap();
+        _ = handle.join().expect("associated thread panicked");
 
         Ok(())
     }
