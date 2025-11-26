@@ -5,23 +5,24 @@
 Cower packets (from now on referred to only as packets) consist of two parts:
 
 - **header** - right now 3 bytes long
-- **payload** - `u16::MAX - HEADER_SIZE`
+- **payload** - `u16::MAX`
+
+Therefore, packets can be up to `u16::MAX + 3` bytes long.
 
 ### Header
 
 The header has two parts:
 
 - `opcode` - `u8`
-- `payload_length` - `u16::MAX - HEADER_SIZE`
+- `payload_length` - `u16`
 
 The opcode specifies the type of message. Most of the `u8` range isn't used, and
 meaning of unused discriminants can change at any time. On the other hand,
 defined discriminants don't change meaning (or at least I try my best not to
 change it).
 
-Payload length is in bytes. A `u16` can hold values up to `65_535`, and the
-header takes up 3 bytes, so the payload can be up to `65_532` bytes (or
-approximately 64 KiB). This is pretty overkill for a protocol like this, but
+Payload length is in bytes, so the payload can be up to `u16::MAX` bytes (or
+approximately 64 KiB) long. This is pretty overkill for a protocol like this, but
 it's only an upper bound.
 
 ### Payload
