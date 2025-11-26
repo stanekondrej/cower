@@ -9,3 +9,4 @@ cower-common = { path = "../cower-common" }
 clap = { version = "4.5.53", features = ["derive"] }
 anyhow = "1.0.100"
 native-tls = "0.2.14"
+eframe = "0.33.2"
