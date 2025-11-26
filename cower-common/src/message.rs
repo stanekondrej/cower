@@ -120,6 +120,21 @@ mod header_tests {
 
         Ok(())
     }
+
+    #[test]
+    fn deserialize_header_invalid_opcode() -> crate::Result<()> {
+        const OPCODE: u8 = u8::MAX;
+
+        // length field is already set to 0
+        let mut header_buf = [0; HEADER_SIZE as usize];
+        header_buf[0] = OPCODE;
+
+        if let Ok(msg) = MessageHeader::deserialize(&header_buf) {
+            panic!("message shouldn't have been deserialized (deserialized to {msg:?})");
+        }
+
+        Ok(())
+    }
 }
 
 /// A message to be sent or received over the network using [`crate::Connection`]
@@ -181,7 +196,7 @@ impl Message {
 }
 
 #[cfg(test)]
-mod tests {
+mod message_tests {
     use crate::Message;
 
     #[test]
@@ -204,6 +219,18 @@ mod tests {
             assert_eq!(resource_name, parsed_res_name.as_str());
         } else {
             panic!("Start message in buffer deserialized to a different type")
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_start_message_payload_too_big() -> crate::Result<()> {
+        let fill_char = 'A';
+        let s = fill_char.to_string().repeat((u16::MAX as usize) + 1);
+
+        if let Ok(msg) = (Message::StartMessage { resource_name: s }).serialize_payload() {
+            panic!("message serialized with overly long payload: {msg:?}")
         }
 
         Ok(())
