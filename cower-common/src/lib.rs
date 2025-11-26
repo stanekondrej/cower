@@ -17,7 +17,7 @@ use std::{
     result,
 };
 
-use crate::message::{HEADER_SIZE, MAX_MESSAGE_PAYLOAD_LENGTH, MessageHeader};
+use crate::message::{HEADER_SIZE, MessageHeader};
 
 /// Error type returned by all the different functions this library provides
 #[allow(missing_docs)]
@@ -70,15 +70,12 @@ impl<T> Connection<T> {
 
     /// Receive a message over the connection
     pub fn receive(&mut self) -> crate::Result<Message> {
-        let mut buf = [0; HEADER_SIZE];
+        let mut buf = [0; HEADER_SIZE as usize];
         self.stream.read_exact(&mut buf)?;
 
-        let header = MessageHeader::deserialize(&buf[0..HEADER_SIZE])?;
-        if usize::from(header.length) > MAX_MESSAGE_PAYLOAD_LENGTH {
-            return Err(crate::Error::MesssageTooBig);
-        }
+        let header = MessageHeader::deserialize(&buf[0..HEADER_SIZE as usize])?;
 
-        let mut data_buf = vec![0; header.length.into()];
+        let mut data_buf = vec![0; header.length.inner().into()];
         self.stream.read_exact(&mut data_buf)?;
 
         Message::deserialize(&header, &data_buf)

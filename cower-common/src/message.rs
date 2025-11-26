@@ -2,15 +2,15 @@
 
 /// Maximum length of a message. Functions may return errors on receiving and panic on sending if
 /// the message length exceeds this value
-pub const MAX_MESSAGE_LENGTH: usize = u16::MAX as usize;
+pub const MAX_MESSAGE_LENGTH: u16 = u16::MAX;
 
 /// Size of the message header in bytes
 // this doesn't take the size directly from `size_of::<MessageHeader>()` because alignment is
 // something that (fortunately) doesn't apply to bytes sent over the network.
-pub const HEADER_SIZE: usize = size_of::<OpCode>() + size_of::<u16>();
+pub const HEADER_SIZE: u16 = (size_of::<OpCode>() + size_of::<u16>()) as u16;
 
 /// Maximum length of the message payload.
-pub const MAX_MESSAGE_PAYLOAD_LENGTH: usize = MAX_MESSAGE_LENGTH - HEADER_SIZE;
+pub const MAX_MESSAGE_PAYLOAD_LENGTH: u16 = MAX_MESSAGE_LENGTH - HEADER_SIZE;
 
 /// The different message opcode constants
 ///
@@ -28,6 +28,26 @@ pub enum OpCode {
     StartMessage = 0,
 }
 
+/// The length of the payload, checked to be in-bounds
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
+pub struct PayloadLength(u16);
+
+impl PayloadLength {
+    /// Constructs a new [`PayloadLength`], checking that `val` is in-bounds
+    pub fn new(val: u16) -> Option<PayloadLength> {
+        if val > MAX_MESSAGE_PAYLOAD_LENGTH {
+            return None;
+        }
+
+        Some(Self(val))
+    }
+
+    /// Retrieves the inner value
+    pub fn inner(&self) -> u16 {
+        self.0
+    }
+}
+
 /// The header of the message containing control fields
 ///
 /// # Serialization
@@ -39,19 +59,19 @@ pub enum OpCode {
 #[derive(Debug)]
 pub struct MessageHeader {
     pub opcode: OpCode,
-    pub length: u16,
+    pub length: PayloadLength,
 }
 
 impl MessageHeader {
     /// Serialize the message header into bytes
-    pub const fn serialize(&self) -> [u8; HEADER_SIZE] {
-        let mut buf = [0; HEADER_SIZE];
+    pub fn serialize(&self) -> [u8; HEADER_SIZE as usize] {
+        let mut buf = [0; HEADER_SIZE as usize];
 
         let (opcode, length) = buf.split_at_mut(size_of::<OpCode>());
         // yes, conversion to big endian is useless here, but if the opcode type changes sometime
         // later this will be needed
         opcode[0] = (self.opcode as u8).to_be();
-        let length_bytes = self.length.to_be_bytes();
+        let length_bytes = self.length.inner().to_be_bytes();
         length.copy_from_slice(&length_bytes);
 
         buf
@@ -59,7 +79,7 @@ impl MessageHeader {
 
     /// Parse the header from a provided buffer
     pub fn deserialize(buf: &[u8]) -> crate::Result<Self> {
-        if buf.len() < HEADER_SIZE {
+        if buf.len() < HEADER_SIZE.into() {
             return Err(crate::Error::UnknownMessage);
         }
 
@@ -77,19 +97,22 @@ impl MessageHeader {
         length += u16::from(length_buf[0] << 1);
         length += u16::from(length_buf[1]);
 
+        let length = PayloadLength::new(length).ok_or(crate::Error::MesssageTooBig)?;
         Ok(Self { opcode, length })
     }
 }
 
 #[cfg(test)]
 mod header_tests {
-    use crate::message::{HEADER_SIZE, MessageHeader, OpCode};
+    use crate::message::{HEADER_SIZE, MessageHeader, OpCode, PayloadLength};
 
     #[test]
     fn serialize_header() {
+        let length = PayloadLength::new(69).unwrap();
+
         let header = MessageHeader {
             opcode: OpCode::StartMessage,
-            length: 69,
+            length,
         };
 
         let serialized = header.serialize();
@@ -105,17 +128,17 @@ mod header_tests {
     #[test]
     fn deserialize_header() -> crate::Result<()> {
         const OPCODE: OpCode = OpCode::StartMessage;
-        const LENGTH: u16 = 50;
+        let length = PayloadLength::new(50).unwrap();
 
-        let mut header_buf = [0; HEADER_SIZE];
+        let mut header_buf = [0; HEADER_SIZE as usize];
 
         let (opcode_field, length_field) = header_buf.split_at_mut(size_of::<OpCode>());
         opcode_field[0] = OPCODE as u8;
-        length_field.copy_from_slice(&LENGTH.to_be_bytes());
+        length_field.copy_from_slice(&length.inner().to_be_bytes());
 
         let header = MessageHeader::deserialize(&header_buf)?;
         assert_eq!(header.opcode, OPCODE);
-        assert_eq!(header.length, LENGTH);
+        assert_eq!(header.length, length);
 
         Ok(())
     }
@@ -137,11 +160,13 @@ impl Message {
         Ok(match self {
             Self::StartMessage { resource_name } => MessageHeader {
                 opcode: OpCode::StartMessage,
-                length: resource_name
-                    .len()
-                    .try_into()
-                    .ok()
-                    .ok_or(crate::Error::MesssageTooBig)?,
+                length: PayloadLength::new(
+                    resource_name
+                        .len()
+                        .try_into()
+                        .expect("resource name too big"),
+                )
+                .unwrap(),
             },
         })
     }
@@ -151,7 +176,7 @@ impl Message {
     pub fn serialize_payload(&self) -> crate::Result<Box<[u8]>> {
         match self {
             Self::StartMessage { resource_name } => {
-                if resource_name.len() > MAX_MESSAGE_PAYLOAD_LENGTH {
+                if resource_name.len() > MAX_MESSAGE_PAYLOAD_LENGTH.into() {
                     return Err(crate::Error::MesssageTooBig);
                 }
 
@@ -162,11 +187,12 @@ impl Message {
 
     /// Deserialize a message from a buffer. `buf.len()` is assumed to be `<= MAX_MESSAGE_LENGTH`
     pub fn deserialize(header: &MessageHeader, payload_buf: &[u8]) -> crate::Result<Self> {
-        assert!(payload_buf.len() <= MAX_MESSAGE_LENGTH);
+        assert!(payload_buf.len() <= MAX_MESSAGE_LENGTH.into());
+        assert_eq!(payload_buf.len(), header.length.inner().into());
 
         match header.opcode {
             OpCode::StartMessage => {
-                let resource_name = &payload_buf[0..usize::from(header.length)];
+                let resource_name = &payload_buf[0..header.length.inner().into()];
                 let resource_name = str::from_utf8(resource_name)?.to_owned();
 
                 Ok(Self::StartMessage { resource_name })
