@@ -156,8 +156,7 @@ impl Message {
                 length: resource_name
                     .len()
                     .try_into()
-                    .ok()
-                    .ok_or(crate::Error::MesssageTooBig)?,
+                    .map_err(|_| crate::Error::MesssageTooBig)?,
             },
         })
     }
