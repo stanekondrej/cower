@@ -89,11 +89,14 @@ impl ContainerEngine {
             }
             #[cfg(feature = "podman")]
             ContainerEngine::Podman => {
+                use std::process::Stdio;
+
                 let status = Command::new(PODMAN_BIN_PATH)
                     .args(["start", resource_id])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
                     .status()
-                    .ok()
-                    .ok_or(ContainerError::EngineUnreachable)?;
+                    .map_err(|_| ContainerError::EngineUnreachable)?;
 
                 if !status.success() {
                     let status_code = status.code().ok_or(ContainerError::EngineUnreachable)?;
@@ -130,11 +133,14 @@ impl ContainerEngine {
             }
             #[cfg(feature = "podman")]
             ContainerEngine::Podman => {
+                use std::process::Stdio;
+
                 let status = Command::new(PODMAN_BIN_PATH)
                     .args(["stop", resource_id])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
                     .status()
-                    .ok()
-                    .ok_or(ContainerError::EngineUnreachable)?;
+                    .map_err(|_| ContainerError::EngineUnreachable)?;
 
                 if !status.success() {
                     let status_code = status.code().ok_or(ContainerError::EngineUnreachable)?;
