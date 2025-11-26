@@ -1,16 +1,18 @@
 use anyhow::anyhow;
+use cower_target::ContainerEngine;
 use native_tls::Identity;
 use std::{
     env, fs,
     io::Read,
     net::{TcpListener, TcpStream},
     path::PathBuf,
+    sync::Arc,
     thread::{self, JoinHandle},
 };
 
 use clap::Parser;
 
-use cower_common::Acceptor;
+use cower_common::{Acceptor, prelude::*};
 
 const DEFAULT_BIND_ADDR: &str = "0.0.0.0:9989";
 
@@ -30,13 +32,20 @@ struct Args {
     ident_pass: Option<String>,
 }
 
-fn spawn_handler_thread(acceptor: Acceptor, stream: TcpStream) -> JoinHandle<anyhow::Result<()>> {
+fn spawn_handler_thread(
+    acceptor: Acceptor,
+    stream: TcpStream,
+    engine: Arc<ContainerEngine>,
+) -> JoinHandle<anyhow::Result<()>> {
     thread::spawn(move || {
         let mut stream = acceptor.accept(stream)?;
         let msg = stream.receive()?;
 
-        dbg!(msg);
-        todo!("Implement message handling functionality");
+        match msg {
+            Message::StartMessage { resource_name } => engine.start_container(&resource_name)?,
+        }
+
+        Ok(())
     })
 }
 
@@ -62,11 +71,16 @@ fn main() -> anyhow::Result<()> {
 
     let acceptor = Acceptor::new(identity)?;
     let listener = TcpListener::bind(args.addr)?;
+
+    let engine = ContainerEngine::try_detect().ok_or(anyhow!("No container engine found"))?;
+    let engine = Arc::new(engine);
+
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let acceptor = acceptor.clone();
-                _ = spawn_handler_thread(acceptor, stream);
+                let engine = engine.clone();
+                _ = spawn_handler_thread(acceptor, stream, engine);
             }
             Err(why) => println!("Failed to accept connection: {why}"),
         }

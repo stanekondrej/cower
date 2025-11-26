@@ -9,3 +9,10 @@ anyhow = "1.0.100"
 clap = { version = "4.5.53", features = ["derive"] }
 cower-common = { path = "../cower-common" }
 native-tls = "0.2.14"
+thiserror = "2.0.17"
+ureq = { version = "3.1.4", features = ["native-tls"], optional = true }
+
+[features]
+docker = ["dep:ureq"]
+podman = []
+default = ["docker", "podman"]
