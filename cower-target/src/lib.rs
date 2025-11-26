@@ -7,8 +7,6 @@ use std::{fs, process::Command};
 use anyhow::Result;
 
 /// The container engine to use
-///
-/// Docker is the default as it's the most common.
 #[allow(missing_docs)]
 pub enum ContainerEngine {
     #[cfg(feature = "docker")]

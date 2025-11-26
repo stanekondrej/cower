@@ -185,9 +185,12 @@ impl Message {
         }
     }
 
-    /// Deserialize a message from a buffer. `buf.len()` is assumed to be `<= MAX_MESSAGE_LENGTH`
+    /// Deserialize a message from a buffer. `payload_buf.len()` is assumed to be `<= MAX_MESSAGE_LENGTH`
     pub fn deserialize(header: &MessageHeader, payload_buf: &[u8]) -> crate::Result<Self> {
-        assert!(payload_buf.len() <= MAX_MESSAGE_LENGTH.into());
+        if payload_buf.len() > MAX_MESSAGE_PAYLOAD_LENGTH.into() {
+            return Err(crate::Error::MesssageTooBig);
+        }
+
         assert_eq!(payload_buf.len(), header.length.inner().into());
 
         match header.opcode {
