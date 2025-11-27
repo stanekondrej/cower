@@ -29,7 +29,7 @@ jobs:
       run: cargo build --verbose
 
     - name: Check warnings with Clippy
-      run: cargo clippy --all-targets -- -D warnings
+      run: cargo clippy --all-targets -- -D warnings --no-deps
 
     - name: Run tests
       run: cargo test --verbose
