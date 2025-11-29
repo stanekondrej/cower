@@ -1,9 +1,12 @@
-use std::{env, fs, io::Read};
+use std::{env, fs, io::Read, path::PathBuf};
 
 use clap::Parser;
 
 use cower_common::prelude::*;
 use native_tls::Certificate;
+
+#[cfg(feature = "gui")]
+mod gui;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -14,13 +17,28 @@ struct Args {
 
     /// Path to a custom certificate
     #[arg(short, long)]
-    cert_path: Option<String>,
+    cert_path: Option<PathBuf>,
+
+    /// Open the GUI
+    #[cfg(feature = "gui")]
+    #[arg(long, default_value_t = false)]
+    gui: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let cert_path = args.cert_path.or_else(|| env::var("COWER_CERT").ok());
+    #[cfg(feature = "gui")]
+    if args.gui {
+        use std::process::exit;
+
+        gui::open_gui(&args).expect("Couldn't open GUI");
+        exit(0);
+    }
+
+    let cert_path = args
+        .cert_path
+        .or_else(|| env::var("COWER_CERT").ok().map(PathBuf::from));
     let cert: Option<Certificate> = if let Some(cert_path) = cert_path {
         let mut file = fs::File::open(&cert_path)?;
         let mut buf = vec![];
