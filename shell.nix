@@ -9,7 +9,6 @@ pkgs.mkShell {
     pkgs.cargo
 	pkgs.clippy
 	pkgs.openssl
-	pkgs.wayland
   ];
 
   shellHook = ''
