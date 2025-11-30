@@ -1,5 +1,10 @@
 # cower - **CO**ntainer **W**ak**ER**
 
+[![common deps](https://deps.rs/repo/github/stanekondrej/cower/status.svg?path=cower-common)](https://deps.rs/repo/github/stanekondrej/cower?path=cower-common)
+[![client deps](https://deps.rs/repo/github/stanekondrej/cower/status.svg?path=cower-client)](https://deps.rs/repo/github/stanekondrej/cower?path=cower-client)
+[![server deps](https://deps.rs/repo/github/stanekondrej/cower/status.svg?path=cower-server)](https://deps.rs/repo/github/stanekondrej/cower?path=cower-server)
+[![target](https://deps.rs/repo/github/stanekondrej/cower/status.svg?path=cower-target)](https://deps.rs/repo/github/stanekondrej/cower?path=cower-target)
+
 I have no idea how one would even set
 [Wake-on-LAN](https://en.wikipedia.org/wiki/Wake-on-LAN) for containers up. So,
 this is what I created specifically for this purpose - waking containers up
